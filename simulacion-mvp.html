@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simulación — Bot de pedidos por WhatsApp</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  .burbuja-bot { background:#ffffff; border:1px solid #e5e7eb; }
+  .burbuja-cliente { background:#dcf8c6; }
+  .chat-fondo {
+    background-color:#e5ddd5;
+    background-image: radial-gradient(circle at 1px 1px, rgba(0,0,0,0.04) 1px, transparent 0);
+    background-size: 18px 18px;
+  }
+  .rapida:active { transform: scale(0.97); }
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-thumb { background: #c7c7c7; border-radius: 4px; }
+</style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+<div class="max-w-6xl mx-auto p-4">
+
+  <header class="mb-4">
+    <h1 class="text-2xl font-bold">🤖 Simulación — Bot de pedidos por WhatsApp</h1>
+    <p class="text-sm text-gray-500 mt-1">
+      Maqueta sin backend ni base de datos: todo vive en memoria del navegador (se reinicia al recargar la página).
+      Se maneja 100% escribiendo, como un WhatsApp real: sin botones. El menú inicial se elige tipeando el número,
+      y para armar el pedido hay un parser simple (no IA real) que reconoce productos en texto libre.
+    </p>
+  </header>
+
+  <!-- Pestañas -->
+  <div class="flex gap-2 mb-4 border-b border-gray-300">
+    <button id="tab-cliente" class="pestana px-4 py-2 font-semibold border-b-2 border-green-600 text-green-700"
+      onclick="cambiarPestana('cliente')">📱 Simulador de WhatsApp</button>
+    <button id="tab-negocio" class="pestana px-4 py-2 font-semibold border-b-2 border-transparent text-gray-500"
+      onclick="cambiarPestana('negocio')">🗂️ Panel del negocio</button>
+  </div>
+
+  <!-- ===================== PESTAÑA CLIENTE ===================== -->
+  <section id="vista-cliente">
+    <div class="grid md:grid-cols-[260px_1fr] gap-4">
+
+      <!-- Selector de "quién está escribiendo" -->
+      <div class="bg-white rounded-xl border border-gray-200 p-4 h-fit">
+        <h2 class="font-semibold mb-3 text-sm text-gray-600 uppercase tracking-wide">Simular como</h2>
+        <div id="lista-clientes" class="space-y-2"></div>
+        <button onclick="reiniciarSimulacion()"
+          class="mt-4 w-full text-xs text-gray-500 border border-gray-300 rounded-lg py-2 hover:bg-gray-50">
+          ↺ Reiniciar toda la simulación
+        </button>
+      </div>
+
+      <!-- Chat -->
+      <div class="bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col" style="height:680px">
+        <div class="bg-green-600 text-white px-4 py-3 flex items-center gap-2">
+          <div class="w-9 h-9 rounded-full bg-green-800 flex items-center justify-center">🤖</div>
+          <div>
+            <div class="font-semibold" id="chat-titulo">Verdulería Miguel Ángel — Bot de pedidos</div>
+            <div class="text-xs text-green-100">en línea (simulado)</div>
+          </div>
+        </div>
+
+        <div id="chat-mensajes" class="flex-1 overflow-y-auto p-4 space-y-2 chat-fondo"></div>
+
+        <div class="p-3 border-t border-gray-200 bg-gray-50 flex gap-2">
+          <input id="input-texto" type="text" placeholder="Escribí como si fueras el cliente…"
+            class="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-green-500"
+            onkeydown="if(event.key==='Enter') enviarTexto()">
+          <button onclick="enviarTexto()"
+            class="bg-green-600 text-white rounded-full px-4 py-2 text-sm font-medium hover:bg-green-700">Enviar</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PESTAÑA NEGOCIO ===================== -->
+  <section id="vista-negocio" class="hidden">
+    <div class="bg-white rounded-xl border border-gray-200 p-4 mb-4 flex items-center justify-between">
+      <p class="text-sm text-gray-600">
+        Los pedidos se agrupan por <strong>fecha de entrega</strong> (la que escribió el cliente). Tocá
+        "Entregado y pagado" para cerrar el pedido semanal de ese cliente — recién ahí puede arrancar uno nuevo.
+      </p>
+    </div>
+    <div id="resumen-dia" class="mb-4"></div>
+    <div id="tablero-negocio" class="space-y-6"></div>
+  </section>
+
+  <!-- ===================== REFERENCIA: QUÉ PUEDE ESCRIBIR EL CLIENTE ===================== -->
+  <section class="mt-8">
+    <div class="bg-white rounded-xl border border-gray-200 p-5">
+      <h2 class="font-semibold text-lg mb-1">📋 Lo que el cliente puede escribir</h2>
+      <p class="text-sm text-gray-500 mb-4">
+        El primer mensaje siempre muestra este menú numerado. De ahí en más, todo se maneja por texto libre
+        (esta simulación usa un parser simple por palabras clave, no IA real — el bot de producción sí la va a tener).
+      </p>
+      <ol class="list-decimal list-inside space-y-2 text-sm">
+        <li><strong>Cualquier primer mensaje</strong> — dispara el saludo y el menú: 1) Pedir precios, 2) Iniciar un pedido, 3) Consultar mi pedido activo, 4) Agregar a un pedido ya confirmado, 5) Quitar de un pedido confirmado.</li>
+        <li><strong>Opción 1 — Pedir precios</strong> — escribiendo "1" o "precios" → el bot manda el link al catálogo.</li>
+        <li><strong>Opción 2 — Iniciar un pedido</strong> — escribiendo "2" o "iniciar un pedido". El bot pide que se mande <em>todo el pedido en un mismo mensaje</em>, ej: "2 kg de tomate, 1 kg de papas y 3 bananas". Se puede mandar en más de un mensaje si hace falta.</li>
+        <li><strong>Terminar de pedir</strong> — escribiendo la palabra <strong>LISTO</strong> (o "eso es todo", "nada más") → cierra la carga de productos.</li>
+        <li><strong>Día y turno juntos</strong> — en un mismo mensaje, ej: <em>"miércoles tarde"</em>. El día siempre es de la semana que viene (lunes a domingo); el bot calcula la fecha exacta y confirma el pedido con esa fecha y el total.</li>
+        <li><strong>Opción 3 — Consultar mi pedido activo</strong> — "3", "ver mi pedido", "qué pedí".</li>
+        <li><strong>Opción 4 — Agregar a un pedido ya confirmado</strong> — ej. "agregame lechuga", "sumá naranjas".</li>
+        <li><strong>Opción 5 — Quitar de un pedido confirmado</strong> — ej. "sacame las papas". <strong>Ojo:</strong> a partir de la 4ª modificación (entre agregar y quitar combinadas) sobre un pedido ya confirmado, se cobra un cargo extra.</li>
+        <li><strong>Registrarse (primera vez, todavía no en esta maqueta)</strong> — nombre y apellido, más DNI o teléfono — obligatorio antes del primer pedido en la versión real.</li>
+        <li><strong>No decir nada</strong> — en la versión real, si pasa una semana desde la última entrega sin pedido nuevo, el bot escribe primero (3 días antes) para preguntar si repite.</li>
+        <li><strong>Mandar mensajes que no se entienden, muchas veces seguidas</strong> — el bot repite el menú cada vez, pero a partir del 5º mensaje sin sentido seguido avisa que va a dejar de responder por 24hs (y da un teléfono para casos urgentes) — y a partir de ahí queda en silencio para ese número hasta que pasen esas 24hs.</li>
+      </ol>
+    </div>
+  </section>
+
+</div>
+
+<script>
+/* ============================================================
+   DATOS DE PRUEBA (simulados, nada de esto es real)
+   ============================================================ */
+
+const CATALOGO = [
+  { id: 1, nombre: 'Tomate',    precio: 1200, unidad: 'kg',     claves: ['tomate'] },
+  { id: 2, nombre: 'Papa',      precio: 800,  unidad: 'kg',     claves: ['papa'] },
+  { id: 3, nombre: 'Banana',    precio: 1000, unidad: 'kg',     claves: ['banana'] },
+  { id: 4, nombre: 'Manzana',   precio: 1400, unidad: 'kg',     claves: ['manzana'] },
+  { id: 5, nombre: 'Lechuga',   precio: 600,  unidad: 'unidad', claves: ['lechuga'] },
+  { id: 6, nombre: 'Cebolla',   precio: 700,  unidad: 'kg',     claves: ['cebolla'] },
+  { id: 7, nombre: 'Naranja',   precio: 900,  unidad: 'kg',     claves: ['naranja'] },
+];
+
+const TURNOS = [
+  { id: 'manana',   texto: 'Mañana' },
+  { id: 'mediodia', texto: 'Mediodía' },
+  { id: 'tarde',    texto: 'Tarde' },
+];
+
+const TARIFA_EXTRA_MODIFICACION = 500; // valor de ejemplo, a definir con el cliente
+
+// Estado en memoria — "la base de datos" de esta simulación
+let CLIENTES = {};
+let clienteActivo = '3511234567';
+
+function estadoInicial() {
+  return {
+    '3511234567': { nombre: 'Juan Pérez',   pedido: null, intentosFallidos: 0, bloqueadoHasta: null },
+    '3517654321': { nombre: 'María Gómez',  pedido: null, intentosFallidos: 0, bloqueadoHasta: null },
+  };
+}
+
+function nuevoPedido() {
+  return {
+    items: [],          // { productoId, cantidad }
+    fecha: null,         // "DD/MM", la escribe el cliente
+    turno: null,
+    fase: 'armando',     // armando -> fecha_turno -> (confirmado = true)
+    confirmado: false,
+    modificaciones: 0,   // agregar/quitar sobre un pedido YA confirmado
+    cargoExtra: 0,
+    estadoNegocio: 'nuevo',   // nuevo / armando / listo / entregado
+    creado: new Date(),
+  };
+}
+
+/* ============================================================
+   PARSER DE TEXTO LIBRE (simulado — palabras clave, no IA real)
+   ============================================================ */
+
+function normalizar(t) { return (t || '').toLowerCase(); }
+
+function extraerProductosDeTexto(texto) {
+  const t = normalizar(texto);
+  const encontrados = [];
+  CATALOGO.forEach(prod => {
+    for (const clave of prod.claves) {
+      const regex = new RegExp('(\\d+)?\\s*(?:kg|kilos?|unidades?)?\\s*(?:de\\s+)?' + clave + 's?\\b', 'i');
+      const m = t.match(regex);
+      if (m) {
+        const cantidad = m[1] ? parseInt(m[1], 10) : 1;
+        encontrados.push({ productoId: prod.id, cantidad });
+        break;
+      }
+    }
+  });
+  return encontrados;
+}
+
+function contieneListo(texto) {
+  const t = normalizar(texto);
+  return /\blisto\b/.test(t) || t.includes('nada mas') || t.includes('nada más') || t.includes('eso es todo');
+}
+
+// El cliente elige un día de la semana QUE VIENE (lunes a domingo) en vez de
+// escribir una fecha a mano — así no hace falta validar formatos raros ni
+// fechas pasadas: el día que diga siempre cae en la semana siguiente.
+const DIAS_SEMANA = [
+  { id: 'lunes',      texto: 'Lunes',      offset: 0 },
+  { id: 'martes',     texto: 'Martes',     offset: 1 },
+  { id: 'miercoles',  texto: 'Miércoles',  offset: 2 },
+  { id: 'jueves',     texto: 'Jueves',     offset: 3 },
+  { id: 'viernes',    texto: 'Viernes',    offset: 4 },
+  { id: 'sabado',     texto: 'Sábado',     offset: 5 },
+  { id: 'domingo',    texto: 'Domingo',    offset: 6 },
+];
+
+function sinAcentos(t) {
+  return t.normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+function extraerDiaSemana(texto) {
+  const t = sinAcentos(normalizar(texto));
+  return DIAS_SEMANA.find(d => t.includes(sinAcentos(d.id))) || null;
+}
+
+// Lunes de la semana que viene: si hoy ya es lunes, igual apunta al de
+// dentro de 7 días (la semana que viene), no al de hoy.
+function proximoLunes() {
+  const hoy = new Date();
+  const diasHastaLunes = ((8 - hoy.getDay()) % 7) || 7;
+  return new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + diasHastaLunes);
+}
+
+function fechaDeDiaProximaSemana(diaInfo) {
+  const lunes = proximoLunes();
+  const fecha = new Date(lunes.getFullYear(), lunes.getMonth(), lunes.getDate() + diaInfo.offset);
+  const dd = String(fecha.getDate()).padStart(2, '0');
+  const mm = String(fecha.getMonth() + 1).padStart(2, '0');
+  // "orden" (timestamp) aparte del texto: el texto arranca con el nombre del
+  // día ("Miércoles 30/09"), así que ordenar tarjetas alfabéticamente por ese
+  // texto no las dejaría en orden cronológico — para eso se usa "orden".
+  return { texto: `${diaInfo.texto} ${dd}/${mm}`, orden: fecha.getTime() };
+}
+
+function extraerTurno(texto) {
+  const t = normalizar(texto);
+  if (t.includes('mediodia') || t.includes('mediodía')) return 'mediodia';
+  if (t.includes('tarde')) return 'tarde';
+  if (t.includes('manana') || t.includes('mañana')) return 'manana';
+  return null;
+}
+
+// Protección anti-abuso: si el bot no entiende varios mensajes seguidos de un
+// mismo número, deja de contestar por un rato en vez de reintentar sin límite.
+const LIMITE_INTENTOS_FALLIDOS = 5;
+const HORAS_BLOQUEO = 24;
+const TELEFONO_ADMINISTRACION = '351-000-0000'; // placeholder — poner el real
+
+function textoMenu() {
+  return '¿Qué necesitás? Elegí una opción (o escribila):\n' +
+    '1️⃣ Pedir precios\n' +
+    '2️⃣ Iniciar un pedido\n' +
+    '3️⃣ Consultar mi pedido activo\n' +
+    '4️⃣ Agregar a un pedido ya confirmado\n' +
+    '5️⃣ Quitar de un pedido confirmado\n' +
+    `   (⚠️ a partir de la 4ª modificación sobre un pedido confirmado se cobra un cargo extra de $${TARIFA_EXTRA_MODIFICACION})`;
+}
+
+/* ============================================================
+   MOTOR DE CONVERSACIÓN
+   ============================================================ */
+
+function pedidoActivo(tel) { return CLIENTES[tel].pedido; }
+
+function totalPedido(pedido) {
+  const base = pedido.items.reduce((acc, it) => {
+    const prod = CATALOGO.find(p => p.id === it.productoId);
+    return acc + prod.precio * it.cantidad;
+  }, 0);
+  return base + (pedido.cargoExtra || 0);
+}
+
+function textoResumenPedido(pedido) {
+  if (pedido.items.length === 0) return 'Todavía no agregaste productos.';
+  const lineas = pedido.items.map(it => {
+    const prod = CATALOGO.find(p => p.id === it.productoId);
+    return `• ${it.cantidad} ${prod.unidad} ${prod.nombre} — $${(prod.precio * it.cantidad).toLocaleString('es-AR')}`;
+  });
+  if (pedido.cargoExtra) lineas.push(`• Cargo extra por modificaciones — $${pedido.cargoExtra.toLocaleString('es-AR')}`);
+  lineas.push(`\nTotal: $${totalPedido(pedido).toLocaleString('es-AR')}`);
+  if (pedido.fecha) lineas.push(`Entrega: ${pedido.fecha} — turno ${TURNOS.find(t => t.id === pedido.turno)?.texto ?? '(sin elegir)'}`);
+  return lineas.join('\n');
+}
+
+function procesarMensajeCliente(tel, textoOriginal) {
+  const texto = (textoOriginal || '').trim();
+  if (!texto) return;
+  mensajeCliente(tel, textoOriginal);
+
+  const cliente = CLIENTES[tel];
+
+  // Si ya está bloqueado, el bot directamente no contesta nada — ni
+  // siquiera el aviso de bloqueo de nuevo, para no seguir saturando.
+  if (cliente.bloqueadoHasta) {
+    if (Date.now() < cliente.bloqueadoHasta) {
+      refrescarChat(tel);
+      armarListaClientes();
+      return;
+    }
+    // Pasaron las 24hs: se levanta el bloqueo y arranca de cero.
+    cliente.bloqueadoHasta = null;
+    cliente.intentosFallidos = 0;
+  }
+
+  const pedido = pedidoActivo(tel);
+  let entendido;
+
+  if (!pedido) {
+    entendido = manejarMenuPrincipal(tel, texto);
+  } else if (!pedido.confirmado && pedido.fase === 'armando') {
+    entendido = manejarArmadoPedido(tel, texto);
+  } else if (!pedido.confirmado && pedido.fase === 'fecha_turno') {
+    entendido = manejarFechaYTurno(tel, texto);
+  } else {
+    entendido = manejarPedidoConfirmado(tel, texto);
+  }
+
+  if (entendido === false) {
+    cliente.intentosFallidos = (cliente.intentosFallidos || 0) + 1;
+    if (cliente.intentosFallidos >= LIMITE_INTENTOS_FALLIDOS) {
+      cliente.bloqueadoHasta = Date.now() + HORAS_BLOQUEO * 60 * 60 * 1000;
+      mensajeBot(tel,
+        `Recibimos varios mensajes seguidos que no pudimos entender. Para no saturar el chat, ` +
+        `vamos a poder responder de nuevo por acá recién dentro de ${HORAS_BLOQUEO} horas. ` +
+        `Si es urgente, llamá al ${TELEFONO_ADMINISTRACION}.`
+      );
+    }
+  } else {
+    cliente.intentosFallidos = 0;
+  }
+
+  refrescarChat(tel);
+  armarListaClientes();
+}
+
+function manejarMenuPrincipal(tel, texto) {
+  const t = normalizar(texto);
+
+  if (t === '1' || t.includes('precio')) {
+    mensajeBot(tel, '¡Claro! Este es nuestro catálogo con precios actualizados:\n🔗 miguelangel.plexi.com.ar/precios (link simulado)');
+    return true;
+  }
+  if (t === '2' || t.includes('iniciar un pedido') || t.includes('hacer un pedido') || t.includes('iniciar pedido') || t.includes('quiero pedir')) {
+    CLIENTES[tel].pedido = nuevoPedido();
+    mensajeBot(tel,
+      'Dale, contame todo tu pedido en un mismo mensaje (ej: "2 kg de tomate, 1 kg de papas y 3 bananas"). ' +
+      'Si te falta algo lo podés mandar en otro mensaje. Cuando termines, escribí LISTO.'
+    );
+    return true;
+  }
+  if (t === '3' || t.includes('consultar mi pedido') || t.includes('ver mi pedido') || t.includes('mi pedido activo')) {
+    mensajeBot(tel, 'No tenés ningún pedido activo todavía. Escribí "2" para iniciar uno.');
+    return true;
+  }
+  if (t === '4' || t.includes('agregar a un pedido') || (t.includes('agregar') && t.includes('confirmado'))) {
+    mensajeBot(tel, 'Todavía no tenés un pedido confirmado al que agregarle nada. Primero armá uno (opción 2).');
+    return true;
+  }
+  if (t === '5' || t.includes('quitar de un pedido') || (t.includes('quitar') && t.includes('confirmado'))) {
+    mensajeBot(tel, 'Todavía no tenés un pedido confirmado del que quitar nada.');
+    return true;
+  }
+  mensajeBot(tel, 'No entendí bien 🤔\n\n' + textoMenu());
+  return false;
+}
+
+function manejarArmadoPedido(tel, texto) {
+  const pedido = pedidoActivo(tel);
+
+  if (contieneListo(texto)) {
+    if (pedido.items.length === 0) {
+      mensajeBot(tel, 'Todavía no reconocí ningún producto del catálogo en lo que escribiste. Contame qué querés pedir.');
+      return true;
+    }
+    pedido.fase = 'fecha_turno';
+    mensajeBot(tel,
+      `Anotado:\n${textoResumenPedido(pedido)}\n\n` +
+      '¿Qué día de la semana que viene querés la entrega (de lunes a domingo) y en qué turno? ' +
+      'Escribilo junto, por ejemplo: "miércoles tarde".'
+    );
+    return true;
+  }
+
+  const encontrados = extraerProductosDeTexto(texto);
+  if (encontrados.length === 0) {
+    mensajeBot(tel,
+      'No reconocí ningún producto del catálogo ahí. Podés pedir los productos del listado oficial:\n' +
+      '🔗 miguelangel.plexi.com.ar/precios (link simulado)\n\nCuando termines, escribí LISTO.'
+    );
+    return false;
+  }
+  encontrados.forEach(({ productoId, cantidad }) => {
+    const existente = pedido.items.find(it => it.productoId === productoId);
+    if (existente) existente.cantidad += cantidad;
+    else pedido.items.push({ productoId, cantidad });
+  });
+  mensajeBot(tel, `Vas llevando:\n${textoResumenPedido(pedido)}\n\n¿Algo más? Cuando termines, escribí LISTO.`);
+  return true;
+}
+
+function manejarFechaYTurno(tel, texto) {
+  const pedido = pedidoActivo(tel);
+  const diaInfo = extraerDiaSemana(texto);
+  const turno = extraerTurno(texto);
+
+  if (!diaInfo && !turno) {
+    mensajeBot(tel, 'No te entendí el día ni el turno. Escribilos juntos, ej: "miércoles tarde" (elegí un día de la semana que viene, de lunes a domingo).');
+    return false;
+  }
+  if (diaInfo) {
+    const f = fechaDeDiaProximaSemana(diaInfo);
+    pedido.fecha = f.texto;
+    pedido.fechaOrden = f.orden;
+  }
+  if (turno) pedido.turno = turno;
+
+  if (!pedido.fecha || !pedido.turno) {
+    const falta = !pedido.fecha ? 'el día (de lunes a domingo de la semana que viene)' : 'el turno (mañana, mediodía o tarde)';
+    mensajeBot(tel, `Me falta ${falta}.`);
+    return true;
+  }
+
+  pedido.confirmado = true;
+  mensajeBot(tel,
+    `¡Pedido guardado! 🎉\n\n${textoResumenPedido(pedido)}\n\n` +
+    'Se paga en el local o por alias de Mercado Pago, a confirmar en persona antes de retirar. ' +
+    'Este pedido queda activo hasta que te lo entreguemos y lo marquemos como pagado — mientras tanto ' +
+    'podés escribirme para verlo, agregar o quitar productos.'
+  );
+  refrescarNegocio();
+  return true;
+}
+
+function manejarPedidoConfirmado(tel, texto) {
+  const pedido = pedidoActivo(tel);
+  const t = normalizar(texto);
+
+  if (t === '3' || t.includes('ver') || t.includes('consultar') || t.includes('como va') || t.includes('qué pedí') || t.includes('que pedi')) {
+    mensajeBot(tel, textoResumenPedido(pedido));
+    return true;
+  }
+
+  const quiereQuitar = t.includes('quitar') || t.includes('sacar') || t.includes('saca') || t.includes('sin ');
+  const encontrados = extraerProductosDeTexto(texto);
+
+  if (encontrados.length === 0) {
+    mensajeBot(tel,
+      'No reconocí ningún producto ahí. Podés:\n' +
+      '1️⃣ Agregar un producto — ej. "agregame lechuga"\n' +
+      '2️⃣ Quitar un producto — ej. "sacame las papas"\n' +
+      '3️⃣ Ver mi pedido — escribí "ver mi pedido"'
+    );
+    return false;
+  }
+
+  encontrados.forEach(({ productoId, cantidad }) => {
+    if (quiereQuitar) {
+      pedido.items = pedido.items.filter(it => it.productoId !== productoId);
+    } else {
+      const existente = pedido.items.find(it => it.productoId === productoId);
+      if (existente) existente.cantidad += cantidad;
+      else pedido.items.push({ productoId, cantidad });
+    }
+  });
+
+  pedido.modificaciones = (pedido.modificaciones || 0) + 1;
+  let aviso = '';
+  if (pedido.modificaciones === 4) {
+    pedido.cargoExtra = TARIFA_EXTRA_MODIFICACION;
+    aviso = `\n\n⚠️ Esta es tu modificación número 4 sobre este pedido — a partir de acá se suma un cargo extra de $${TARIFA_EXTRA_MODIFICACION}.`;
+  } else if (pedido.modificaciones > 4) {
+    aviso = `\n\n⚠️ Modificación número ${pedido.modificaciones} (ya tenés el cargo extra de $${TARIFA_EXTRA_MODIFICACION} aplicado).`;
+  }
+
+  mensajeBot(tel, `Listo, actualicé tu pedido:\n${textoResumenPedido(pedido)}${aviso}`);
+  refrescarNegocio();
+  return true;
+}
+
+/* ---- helpers de mensajes ---- */
+
+function mensajeBot(tel, texto) {
+  CLIENTES[tel].chat = CLIENTES[tel].chat || [];
+  CLIENTES[tel].chat.push({ de: 'bot', texto });
+}
+function mensajeCliente(tel, texto) {
+  CLIENTES[tel].chat = CLIENTES[tel].chat || [];
+  CLIENTES[tel].chat.push({ de: 'cliente', texto });
+}
+
+function enviarTexto() {
+  const input = document.getElementById('input-texto');
+  const texto = input.value;
+  if (!texto.trim()) return;
+  procesarMensajeCliente(clienteActivo, texto);
+  input.value = '';
+}
+
+/* ============================================================
+   RENDER — pestaña cliente (chat)
+   ============================================================ */
+
+function refrescarChat(tel) {
+  const cont = document.getElementById('chat-mensajes');
+  const chat = CLIENTES[tel].chat || [];
+  cont.innerHTML = chat.map(m => `
+    <div class="flex ${m.de === 'cliente' ? 'justify-end' : 'justify-start'}">
+      <div class="${m.de === 'cliente' ? 'burbuja-cliente' : 'burbuja-bot'} rounded-2xl px-3 py-2 max-w-[75%] shadow-sm whitespace-pre-line text-sm">
+        ${m.texto}
+      </div>
+    </div>
+  `).join('');
+  cont.scrollTop = cont.scrollHeight;
+
+  document.getElementById('chat-titulo').textContent =
+    `Verdulería Miguel Ángel — Bot de pedidos (${CLIENTES[tel].nombre})`;
+}
+
+function armarListaClientes() {
+  const cont = document.getElementById('lista-clientes');
+  cont.innerHTML = Object.entries(CLIENTES).map(([tel, c]) => `
+    <button onclick="elegirCliente('${tel}')"
+      class="w-full text-left px-3 py-2 rounded-lg border text-sm ${tel === clienteActivo ? 'bg-green-50 border-green-400' : 'border-gray-200 hover:bg-gray-50'}">
+      <div class="font-medium">${c.nombre}</div>
+      <div class="text-xs text-gray-500">${tel}</div>
+      <div class="text-xs mt-1">${c.bloqueadoHasta && Date.now() < c.bloqueadoHasta ? '🔒 bloqueado 24hs' : (c.pedido ? (c.pedido.confirmado ? '🟢 pedido activo' : '🟡 armando pedido') : '⚪ sin pedido')}</div>
+    </button>
+  `).join('');
+}
+
+function elegirCliente(tel) {
+  clienteActivo = tel;
+  if (!CLIENTES[tel].chat || CLIENTES[tel].chat.length === 0) {
+    mensajeBot(tel, `¡Hola! 👋 Soy el bot de pedidos de Verdulería Miguel Ángel. Te voy a ayudar a armar tu pedido de la semana.\n\n${textoMenu()}`);
+  }
+  armarListaClientes();
+  refrescarChat(tel);
+}
+
+/* ============================================================
+   RENDER — pestaña negocio (tarjetas por fecha)
+   ============================================================ */
+
+const COLOR_ESTADO = {
+  nuevo:     'bg-red-100 text-red-700 border-red-300',
+  armando:   'bg-yellow-100 text-yellow-700 border-yellow-300',
+  listo:     'bg-green-100 text-green-700 border-green-300',
+  entregado: 'bg-blue-100 text-blue-700 border-blue-300',
+};
+const SIGUIENTE_ESTADO = { nuevo: 'armando', armando: 'listo', listo: 'entregado' };
+const ETIQUETA_ESTADO = { nuevo: '🔴 Nuevo', armando: '🟡 Armando', listo: '🟢 Listo', entregado: '🔵 Entregado' };
+
+function pedidosConfirmados() {
+  return Object.entries(CLIENTES)
+    .filter(([, c]) => c.pedido && c.pedido.confirmado && c.pedido.fecha)
+    .map(([tel, c]) => ({ tel, nombre: c.nombre, pedido: c.pedido }));
+}
+
+function refrescarNegocio() {
+  const cont = document.getElementById('tablero-negocio');
+  const resumenCont = document.getElementById('resumen-dia');
+  const confirmados = pedidosConfirmados();
+
+  const cantidadTotal = confirmados.length;
+  const facturadoTotal = confirmados.reduce((acc, c) => acc + totalPedido(c.pedido), 0);
+  resumenCont.innerHTML = confirmados.length ? `
+    <div class="bg-white rounded-xl border border-gray-200 p-4 flex gap-8">
+      <div><div class="text-xs text-gray-400 uppercase">Pedidos activos</div><div class="text-2xl font-bold">${cantidadTotal}</div></div>
+      <div><div class="text-xs text-gray-400 uppercase">Total facturado</div><div class="text-2xl font-bold">$${facturadoTotal.toLocaleString('es-AR')}</div></div>
+    </div>
+  ` : '';
+
+  const porFecha = {};
+  const ordenPorFecha = {};
+  confirmados.forEach(c => {
+    porFecha[c.pedido.fecha] = porFecha[c.pedido.fecha] || [];
+    porFecha[c.pedido.fecha].push(c);
+    ordenPorFecha[c.pedido.fecha] = c.pedido.fechaOrden;
+  });
+
+  const fechas = Object.keys(porFecha).sort((a, b) => ordenPorFecha[a] - ordenPorFecha[b]);
+  if (fechas.length === 0) {
+    cont.innerHTML = `<p class="text-gray-400 text-sm">Todavía no hay pedidos confirmados. Simulá un pedido en la pestaña "Simulador de WhatsApp".</p>`;
+    return;
+  }
+
+  cont.innerHTML = fechas.map(fecha => `
+    <div>
+      <h3 class="font-semibold text-lg mb-2">📅 Entrega: ${fecha}</h3>
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        ${porFecha[fecha].map(({ tel, nombre, pedido }) => `
+          <div class="bg-white rounded-xl border-2 ${COLOR_ESTADO[pedido.estadoNegocio]} p-4">
+            <div class="flex justify-between items-start">
+              <div>
+                <div class="font-semibold">${nombre}</div>
+                <div class="text-xs text-gray-500">${tel}</div>
+              </div>
+              <span class="text-xs px-2 py-0.5 rounded-full ${COLOR_ESTADO[pedido.estadoNegocio]}">${ETIQUETA_ESTADO[pedido.estadoNegocio]}</span>
+            </div>
+            <div class="text-xs uppercase tracking-wide text-gray-400 mt-2">Turno: ${TURNOS.find(t => t.id === pedido.turno).texto}</div>
+            <ul class="text-sm mt-2 space-y-0.5">
+              ${pedido.items.map(it => {
+                const prod = CATALOGO.find(p => p.id === it.productoId);
+                return `<li>• ${it.cantidad} ${prod.unidad} ${prod.nombre}</li>`;
+              }).join('')}
+              ${pedido.cargoExtra ? `<li class="text-amber-700">• Cargo extra modificaciones — $${pedido.cargoExtra.toLocaleString('es-AR')}</li>` : ''}
+            </ul>
+            <div class="text-right font-semibold mt-2">$${totalPedido(pedido).toLocaleString('es-AR')}</div>
+            <div class="flex gap-2 mt-3">
+              ${pedido.estadoNegocio !== 'entregado' ? `
+                <button onclick="avanzarEstado('${tel}')"
+                  class="flex-1 text-xs bg-gray-100 hover:bg-gray-200 rounded-lg py-1.5">
+                  ${pedido.estadoNegocio === 'listo' ? '✅ Entregado y pagado' : '→ ' + ETIQUETA_ESTADO[SIGUIENTE_ESTADO[pedido.estadoNegocio]]}
+                </button>
+              ` : `<span class="flex-1 text-center text-xs text-blue-600">Cerrado — el cliente puede arrancar un pedido nuevo</span>`}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+function avanzarEstado(tel) {
+  const pedido = pedidoActivo(tel);
+  if (pedido.estadoNegocio === 'listo') {
+    pedido.estadoNegocio = 'entregado';
+    setTimeout(() => {
+      CLIENTES[tel].pedido = null;
+      CLIENTES[tel].chat = [];
+      armarListaClientes();
+      refrescarNegocio();
+    }, 900);
+  } else {
+    pedido.estadoNegocio = SIGUIENTE_ESTADO[pedido.estadoNegocio];
+  }
+  refrescarNegocio();
+}
+
+/* ============================================================
+   NAVEGACIÓN Y ARRANQUE
+   ============================================================ */
+
+function cambiarPestana(cual) {
+  document.getElementById('vista-cliente').classList.toggle('hidden', cual !== 'cliente');
+  document.getElementById('vista-negocio').classList.toggle('hidden', cual !== 'negocio');
+  document.getElementById('tab-cliente').className = 'pestana px-4 py-2 font-semibold border-b-2 ' +
+    (cual === 'cliente' ? 'border-green-600 text-green-700' : 'border-transparent text-gray-500');
+  document.getElementById('tab-negocio').className = 'pestana px-4 py-2 font-semibold border-b-2 ' +
+    (cual === 'negocio' ? 'border-green-600 text-green-700' : 'border-transparent text-gray-500');
+  if (cual === 'negocio') refrescarNegocio();
+}
+
+function reiniciarSimulacion() {
+  CLIENTES = estadoInicial();
+  clienteActivo = '3511234567';
+  armarListaClientes();
+  elegirCliente(clienteActivo);
+  refrescarNegocio();
+}
+
+reiniciarSimulacion();
+</script>
+</body>
+</html>
